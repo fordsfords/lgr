@@ -36,8 +36,11 @@ int main(int argc, char **argv)
 
   CPRT_ASSERT(lgr_create(&lgr, 1024, 4096, 1) == LGRERR_OK);
 
-  CPRT_SLEEP_MS(5000);
+  lgr_log(lgr, LGRSEV_FYI, "msg_size=%d", 4096);
+
+  CPRT_SLEEP_MS(10);
 
   CPRT_ASSERT(lgr_delete(lgr) == LGRERR_OK);
+
   return 0;
 }  /* main */

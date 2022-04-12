@@ -19,8 +19,10 @@ at http://geeky-boy.com.  Can't see it?  Keep looking.
 */
 
 #include <stdio.h>
+#include <stdarg.h>
 #include <string.h>
 #include <inttypes.h>
+#include <sys/time.h>
 #if ! defined(_WIN32)
   #include <stdlib.h>
   #include <unistd.h>
@@ -28,18 +30,7 @@ at http://geeky-boy.com.  Can't see it?  Keep looking.
 
 #include "lgr.h"
 
-
-CPRT_THREAD_ENTRYPOINT lgr_thread(void *in_arg)
-{
-  lgr_t *lgr = (lgr_t *)in_arg;
-
-  while (lgr->state != LGR_STATE_EXITING) {
-    CPRT_SLEEP_MS(lgr->sleep_ms);
-  }  /* while state */
-
-  CPRT_THREAD_EXIT;
-  return 0;
-}  /* lgr_thread */
+CPRT_THREAD_ENTRYPOINT lgr_thread(void *in_arg);
 
 
 /* This list of strings must be kept in sync with the
@@ -50,6 +41,7 @@ static char *lgrerrs[] = {
   "LGRERR_BADPARM",
   "LGRERR_MALLOC",
   "LGRERR_FULL",
+  "LGRERR_INTERNAL",
   "BAD_LGRERR", NULL};
 #define BAD_LGRERR (sizeof(lgrerrs)/sizeof(lgrerrs[0]) - 2)
 
@@ -89,7 +81,7 @@ lgrerr_t lgr_create(lgr_t **rtn_lgr, unsigned int msg_size,
   if (lgr == NULL) { return LGRERR_MALLOC; }
 
   lgr->pool_q = NULL;        lgr->log_q = NULL;
-  lgr->q_size = q_size;      lgr->msg_size = msg_size;
+  lgr->q_size = q_size;      lgr->msg_size = msg_size + 1;  /* Space for null. */
   lgr->sleep_ms = sleep_ms;  lgr->state = LGR_STATE_INITIALIZING;
 
   CPRT_MUTEX_INIT(lgr->pool_get_mutex);
@@ -149,3 +141,70 @@ lgrerr_t lgr_delete(lgr_t *lgr)
 
   return LGRERR_OK;
 }  /* lgr_delete */
+
+
+lgrerr_t lgr_log(lgr_t *lgr, unsigned int severity, char *fmt, ...)
+{
+  lgr_log_t *log;
+  qerr_t qerr;
+  va_list args;
+
+  CPRT_MUTEX_LOCK(lgr->pool_get_mutex);
+  qerr = q_deq(lgr->pool_q, (void **)&log);
+  CPRT_MUTEX_UNLOCK(lgr->pool_get_mutex);
+  if (qerr == QERR_EMPTY) {
+    return LGRERR_FULL;  /* No free logs means the logger is full. */
+  }
+  CPRT_ASSERT(qerr == QERR_OK);
+
+  gettimeofday(&(log->tv), NULL);
+
+  log->msg[lgr->msg_size - 1] = '\0';
+  snprintf(log->msg, lgr->msg_size, "%s: ", lgr_sev_str(severity));
+  if (log->msg[lgr->msg_size - 1] != '\0') {
+    log->msg[lgr->msg_size - 1] = '\0';
+  }
+  int msglen = strlen(log->msg);
+
+  if (msglen < lgr->msg_size) {
+    va_start(args, fmt);
+    vsnprintf(&log->msg[msglen], lgr->msg_size - msglen, fmt, args);
+    va_end(args);
+    if (log->msg[lgr->msg_size - 1] != '\0') {
+      log->msg[lgr->msg_size - 1] = '\0';
+    }
+  }
+
+  CPRT_MUTEX_LOCK(lgr->log_put_mutex);
+  qerr = q_enq(lgr->log_q, (void *)log);
+  CPRT_MUTEX_UNLOCK(lgr->log_put_mutex);
+  if (qerr != QERR_OK) {
+    return LGRERR_INTERNAL;
+  }
+
+  return LGRERR_OK;
+}  /* lgr_log */
+
+
+CPRT_THREAD_ENTRYPOINT lgr_thread(void *in_arg)
+{
+  lgr_t *lgr = (lgr_t *)in_arg;
+  struct tm tm_buf;
+
+  while (lgr->state != LGR_STATE_EXITING) {
+    lgr_log_t *log;
+    qerr_t qerr;
+    while ((qerr = q_deq(lgr->log_q, (void **)&log)) == QERR_OK) {
+      localtime_r(&(log->tv.tv_sec), &tm_buf);  /* Break down time. */
+      printf("%02d:%02d:%02d.%06d: %s\n",
+        (int)tm_buf.tm_hour, (int)tm_buf.tm_min, (int)tm_buf.tm_sec,
+        log->tv.tv_usec, log->msg);
+      qerr = q_enq(lgr->pool_q, (void *)log);
+    }
+
+    CPRT_SLEEP_MS(lgr->sleep_ms);
+  }  /* while state */
+
+  CPRT_THREAD_EXIT;
+  return 0;
+}  /* lgr_thread */

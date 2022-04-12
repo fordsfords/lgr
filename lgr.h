@@ -33,7 +33,8 @@ typedef unsigned int lgrerr_t;     /* See LGRERR_* definitions below. */
 #define LGRERR_BADPARM 1    /* Bad input paramter value. */
 #define LGRERR_MALLOC 2     /* No memory available. */
 #define LGRERR_FULL 3       /* No room in queue. */
-#define LAST_LGRERR 3   /* Set to value of last "LGRERR_*" definition. */
+#define LGRERR_INTERNAL 4   /* Internal error. */
+#define LAST_LGRERR 4   /* Set to value of last "LGRERR_*" definition. */
 
 
 typedef unsigned int lgrsev_t;  /* See LGRSEV_* definitions below. */
@@ -69,19 +70,19 @@ typedef struct lgr_s lgr_t;
 
 /* Log entry. */
 struct lgr_log_s {
-  struct timeval *tv;
+  struct timeval tv;
   unsigned int severity;
   char msg[1];
 };
 typedef struct lgr_log_s lgr_log_t;
 
 
+char *lgr_sev_str(lgrsev_t lgrsev);
+char *lgr_err_str(lgrerr_t lgrerr);
 lgrerr_t lgr_create(lgr_t **rtn_lgr, unsigned int msg_size,
     unsigned int q_size, unsigned int sleep_ms);
 lgrerr_t lgr_delete(lgr_t *lgr);
-lgrerr_t lgr_log(lgr_t *lgr, char *msg);
-char *lgr_sev_str(lgrsev_t lgrsev);
-char *lgr_err_str(lgrerr_t lgrerr);
+lgrerr_t lgr_log(lgr_t *lgr, unsigned int severity, char *fmt, ...);
 
 #ifdef __cplusplus
 extern "C" {
