@@ -41,13 +41,12 @@ typedef unsigned int lgrsev_t;  /* See LGRSEV_* definitions below. */
 
 /* When logging a message, caller specifies a severity. These definitions
  * must be kept in sync with the "lgrsevs" string array in "lgr.c". */
-#define LGRSEV_NONE 0     /* Not used. */
-#define LGRSEV_FYI  1     /* Informational. */
-#define LGRSEV_ATTN 2     /* No error, but intended to get attention. */
-#define LGRSEV_WARN 3     /* Error, but funny handled. */
-#define LGRSEV_ERR  4     /* Error, not fully handled, but can continue. */
-#define LGRSEV_FATAL 5    /* Error, cannot continue. */
-#define LAST_LGRSEV 5   /* Set to value of last "LGRSEV_*" definition. */
+#define LGRSEV_FYI  0     /* Informational. */
+#define LGRSEV_ATTN 1     /* No error, but intended to get attention. */
+#define LGRSEV_WARN 2     /* Error, but funny handled. */
+#define LGRSEV_ERR  3     /* Error, not fully handled, but can continue. */
+#define LGRSEV_FATAL 4    /* Error, cannot continue. */
+#define LAST_LGRSEV 4   /* Set to value of last "LGRSEV_*" definition. */
 
 /* Values for lgr_t.state */
 #define LGR_STATE_INITIALIZING 1

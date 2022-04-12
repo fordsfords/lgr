@@ -57,7 +57,6 @@ char *lgr_err_str(lgrerr_t lgrerr)
  * corresponding "LGRSEV_*" constant definitions in "lgr.h".
  * It is used by the lgr_sev_str() function. */
 static char *lgrsevs[] = {
-  "LGRSEV_NONE",
   "LGRSEV_FYI",
   "LGRSEV_ATTN",
   "LGRSEV_WARN",
@@ -81,7 +80,7 @@ lgrerr_t lgr_create(lgr_t **rtn_lgr, unsigned int msg_size,
   if (lgr == NULL) { return LGRERR_MALLOC; }
 
   lgr->pool_q = NULL;        lgr->log_q = NULL;
-  lgr->q_size = q_size;      lgr->msg_size = msg_size + 1;  /* Space for null. */
+  lgr->q_size = q_size;      lgr->msg_size = msg_size + 1;  /* Add null. */
   lgr->sleep_ms = sleep_ms;  lgr->state = LGR_STATE_INITIALIZING;
 
   CPRT_MUTEX_INIT(lgr->pool_get_mutex);
@@ -103,7 +102,10 @@ lgrerr_t lgr_create(lgr_t **rtn_lgr, unsigned int msg_size,
   }
 
   CPRT_THREAD_CREATE(lgr->thread_id, lgr_thread, lgr);
-  lgr->state = LGR_STATE_RUNNING;
+  /* Wait for thread to finish initialization. */
+  while (lgr->state == LGR_STATE_INITIALIZING) {
+    CPRT_SLEEP_MS(0);
+  }
 
   *rtn_lgr = lgr;
   return LGRERR_OK;
@@ -187,7 +189,10 @@ CPRT_THREAD_ENTRYPOINT lgr_thread(void *in_arg)
   lgr_t *lgr = (lgr_t *)in_arg;
   struct tm tm_buf;
 
-  while (lgr->state != LGR_STATE_EXITING) {
+  lgr->state = LGR_STATE_RUNNING;
+  while (lgr->state == LGR_STATE_RUNNING) {
+    CPRT_SLEEP_MS(lgr->sleep_ms);
+
     lgr_log_t *log;
     qerr_t qerr;
     while ((qerr = q_deq(lgr->log_q, (void **)&log)) == QERR_OK) {
@@ -198,8 +203,6 @@ CPRT_THREAD_ENTRYPOINT lgr_thread(void *in_arg)
         log->tv.tv_usec, lgr_sev_str(log->severity), log->msg);
       qerr = q_enq(lgr->pool_q, (void *)log);
     }
-
-    CPRT_SLEEP_MS(lgr->sleep_ms);
   }  /* while state */
 
   CPRT_THREAD_EXIT;

@@ -38,8 +38,6 @@ int main(int argc, char **argv)
 
   lgr_log(lgr, LGRSEV_FYI, "msg_size=%d", 4096);
 
-  CPRT_SLEEP_MS(10);
-
   CPRT_ASSERT(lgr_delete(lgr) == LGRERR_OK);
 
   return 0;
