@@ -159,20 +159,16 @@ lgrerr_t lgr_log(lgr_t *lgr, unsigned int severity, char *fmt, ...)
 
   gettimeofday(&(log->tv), NULL);
 
+  log->severity = severity;
+
   log->msg[lgr->msg_size - 1] = '\0';
-  snprintf(log->msg, lgr->msg_size, "%s: ", lgr_sev_str(severity));
+
+  va_start(args, fmt);
+  vsnprintf(log->msg, lgr->msg_size, fmt, args);
+  va_end(args);
+  /* If print too long, re-add null. */
   if (log->msg[lgr->msg_size - 1] != '\0') {
     log->msg[lgr->msg_size - 1] = '\0';
-  }
-  int msglen = strlen(log->msg);
-
-  if (msglen < lgr->msg_size) {
-    va_start(args, fmt);
-    vsnprintf(&log->msg[msglen], lgr->msg_size - msglen, fmt, args);
-    va_end(args);
-    if (log->msg[lgr->msg_size - 1] != '\0') {
-      log->msg[lgr->msg_size - 1] = '\0';
-    }
   }
 
   CPRT_MUTEX_LOCK(lgr->log_put_mutex);
@@ -196,9 +192,10 @@ CPRT_THREAD_ENTRYPOINT lgr_thread(void *in_arg)
     qerr_t qerr;
     while ((qerr = q_deq(lgr->log_q, (void **)&log)) == QERR_OK) {
       localtime_r(&(log->tv.tv_sec), &tm_buf);  /* Break down time. */
-      printf("%02d:%02d:%02d.%06d: %s\n",
+      printf("%04d/%02d/%02d %02d:%02d:%02d.%06d %s %s\n",
+        (int)tm_buf.tm_year + 1900, (int)tm_buf.tm_mon + 1, (int)tm_buf.tm_mday,
         (int)tm_buf.tm_hour, (int)tm_buf.tm_min, (int)tm_buf.tm_sec,
-        log->tv.tv_usec, log->msg);
+        log->tv.tv_usec, lgr_sev_str(log->severity), log->msg);
       qerr = q_enq(lgr->pool_q, (void *)log);
     }
 
