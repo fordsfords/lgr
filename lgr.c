@@ -37,11 +37,11 @@ CPRT_THREAD_ENTRYPOINT lgr_thread(void *in_arg);
  * corresponding "LGRERR_*" constant definitions in "lgr.h".
  * It is used by the lgr_err_str() function. */
 static char *lgrerrs[] = {
-  "LGRERR_OK",
-  "LGRERR_BADPARM",
-  "LGRERR_MALLOC",
-  "LGRERR_FULL",
-  "LGRERR_INTERNAL",
+  "OK",
+  "BAD_USE",
+  "MALLOC",
+  "FULL",
+  "INTERNAL",
   "BAD_LGRERR", NULL};
 #define BAD_LGRERR (sizeof(lgrerrs)/sizeof(lgrerrs[0]) - 2)
 
@@ -57,11 +57,11 @@ char *lgr_err_str(lgrerr_t lgrerr)
  * corresponding "LGRSEV_*" constant definitions in "lgr.h".
  * It is used by the lgr_sev_str() function. */
 static char *lgrsevs[] = {
-  "LGRSEV_FYI",
-  "LGRSEV_ATTN",
-  "LGRSEV_WARN",
-  "LGRSEV_ERR",
-  "LGRSEV_FATAL",
+  "FYI",
+  "ATTN",
+  "WARN",
+  "ERR",
+  "FATAL",
   "BAD_LGRSEV", NULL };
 #define BAD_LGRSEV (sizeof(lgrsevs)/sizeof(lgrsevs[0]) - 2)
 
@@ -200,7 +200,7 @@ CPRT_THREAD_ENTRYPOINT lgr_thread(void *in_arg)
       printf("%04d/%02d/%02d %02d:%02d:%02d.%06d %s %s\n",
         (int)tm_buf.tm_year + 1900, (int)tm_buf.tm_mon + 1, (int)tm_buf.tm_mday,
         (int)tm_buf.tm_hour, (int)tm_buf.tm_min, (int)tm_buf.tm_sec,
-        log->tv.tv_usec, lgr_sev_str(log->severity), log->msg);
+        (int)log->tv.tv_usec, lgr_sev_str(log->severity), log->msg);
       qerr = q_enq(lgr->pool_q, (void *)log);
     }
   }  /* while state */

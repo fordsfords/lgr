@@ -30,7 +30,7 @@ typedef unsigned int lgrerr_t;     /* See LGRERR_* definitions below. */
 /* Most lgr APIs return "lgrerr_t".  These definitions must
  * be kept in sync with the "lgrerrs" string array in "lgr.c". */
 #define LGRERR_OK 0         /* Success. */
-#define LGRERR_BADPARM 1    /* Bad input paramter value. */
+#define LGRERR_BAD_USE 1    /* Bad usage, often a bad parameter. */
 #define LGRERR_MALLOC 2     /* No memory available. */
 #define LGRERR_FULL 3       /* No room in queue. */
 #define LGRERR_INTERNAL 4   /* Internal error. */
