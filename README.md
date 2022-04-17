@@ -34,3 +34,54 @@ See https://github.com/fordsfords/lgr for code and documentation.
 
 * [cprt](https://github.com/fordsfords/cprt) - C portability helper.
 * [q](https://github.com/fordsfords/q) - Fast queue.
+
+## INTRODUCTION
+
+This logger is designed for high-performance,
+low-latency applicatios that require low execution overhead.
+It will work for other applications,
+but may have objectionable design and operational characteristics.
+
+Specifically:
+1. The design assumes an abundance of CPU resources (i.e. a many-core host).
+It makes use of spinlocks and short-sleep polling,
+both of which are objectionable in a CPU-constrained environment.
+2. The design assumes an abundance of memory.
+It pre-allocaates maximum-sized buffers,
+which allows a reduction in thread contention.
+But this design is wasteful of memory if the average log message size is
+significantly less than maximum message size.
+
+That said, there is one opportunity to make the design even lower
+overhead.
+See [Per-Thread Queues](#per-thread-queues).
+
+## DESIGN NOTES
+
+### Spinlocks
+
+Bad for cpu-constrained systems.
+Could eliminate with [Per-Thread Queues](#per-thread-queues).
+
+### Memory Waste
+
+Memory footprint = (max msg size * q size)
+
+non-contention with logger thread.
+
+Could it use SMX design?
+
+### msg overflow detection.
+
+### q overflow. Counter vs flow control (blocking).
+
+### autoflush
+
+### Log rolling for 24x7 operation (Mon - Fri).
+  * Max size per day,
+    after which generates alert and stops logging till next day.
+
+### Per-Thread Queues
+
+More perf, but complexity in ordering.
+
