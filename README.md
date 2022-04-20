@@ -38,9 +38,27 @@ See https://github.com/fordsfords/lgr for code and documentation.
 ## INTRODUCTION
 
 This logger is designed for high-performance,
-low-latency applicatios that require low execution overhead.
-It will work for other applications,
-but may have objectionable design and operational characteristics.
+low-latency applications that require low execution overhead.
+
+### Features
+
+Features important to high-performance:
+* Zero malloc/free operation on application threads.
+* Zero kernel calls on application threads.
+* Zero thread contention between an application thread and the logger thread.
+(Note however possible thread contention between multiple application threads
+logging at the same time; see [Spinlocks](spinlocks).)
+* High-precision microsecond timestamps using gettimeofday().
+
+Other features:
+
+### Not For Everybody
+
+This logger package should work for pretty much any kind of application,
+but may not always be the right choice.
+Some of its design choices that make it good for high-performance,
+low-latency applications could be objectionable for other kinds
+of applications.
 
 Specifically:
 1. The design assumes an abundance of CPU resources (i.e. a many-core host).
@@ -51,10 +69,6 @@ It pre-allocaates maximum-sized buffers,
 which allows a reduction in thread contention.
 But this design is wasteful of memory if the average log message size is
 significantly less than maximum message size.
-
-That said, there is one opportunity to make the design even lower
-overhead.
-See [Per-Thread Queues](#per-thread-queues).
 
 ## DESIGN NOTES
 
