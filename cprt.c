@@ -43,7 +43,7 @@ int cprt_timeofday(struct cprt_timeval *tv, void *unused_tz)
    * in 100ns ticks.  */
   static const uint64_t EPOCH = ((uint64_t) 116444736000000000ULL);
 
-  GetSystemTimeAsFileTime (&tfile);
+  GetSystemTimeAsFileTime(&tfile);
   time = (uint64_t)tfile.dwLowDateTime;
   time += ((uint64_t)tfile.dwHighDateTime) << 32;
 

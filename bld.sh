@@ -1,6 +1,6 @@
 #!/bin/sh
 
-CACHE_LINE_SIZE=64 # x86, sparc
+CACHE_LINE_SIZE=64 # For "q.c" on x86, sparc
 
 OPTS=""
 if echo "$OSTYPE" | egrep -i linux >/dev/null; then :

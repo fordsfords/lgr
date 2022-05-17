@@ -34,11 +34,14 @@ int main(int argc, char **argv)
 {
   lgr_t *lgr;
 
-  CPRT_ASSERT(lgr_create(&lgr, 1024, 4096, 1) == LGRERR_OK);
+  printf("lgr_create\n"); fflush(stdout);
+  CPRT_ASSERT(lgr_create(&lgr, 1024, 4096, 1, 0, "x.", 1) == LGR_ERR_OK);
 
-  lgr_log(lgr, LGRSEV_FYI, "msg_size=%d", 4096);
+  printf("lgr_log\n"); fflush(stdout);
+  lgr_log(lgr, LGR_SEV_FYI, "msg_size=%d", 4096);
 
-  CPRT_ASSERT(lgr_delete(lgr) == LGRERR_OK);
+  printf("lgr_delete\n"); fflush(stdout);
+  CPRT_ASSERT(lgr_delete(lgr) == LGR_ERR_OK);
 
   return 0;
 }  /* main */
