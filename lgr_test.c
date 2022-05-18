@@ -69,45 +69,93 @@ int is_file_readable(char *fname)
 }  /* is_file_readable */
 
 
+char *ten_chars = "1234567890";
+
 int main(int argc, char **argv)
 {
   lgr_t *lgr;
   int i;
+  int found;
 
   setenv("TZ", ":America/New_York", 1);
   tzset();
 
 /*****************************************/
-  printf("Testing create..."); fflush(stdout);
+  fprintf(stderr, "Testing create..."); fflush(stdout);
   CPRT_ASSERT(lgr_create(&lgr, 1024, 4096, 1, 0, "x.", 1) == LGR_ERR_OK);
 
-  lgr_log(lgr, LGR_SEV_FYI, "msg_size=%d", 4096);
-  CPRT_SLEEP_MS(5);
+  fprintf(stderr, "OK.\n"); fflush(stdout);
+
+/*****************************************/
+  fprintf(stderr, "Testing log..."); fflush(stdout);
+  CPRT_ASSERT(lgr_create(&lgr,
+      1024,  /* max_msg_size */
+      4096,  /* q_size */
+      1,     /* sleep_ms */
+      0,     /* flags */
+      "x.",  /* file_prefix */
+      1)     /* max_file_size_mb */
+    == LGR_ERR_OK);
+  lgr_log(lgr, LGR_SEV_FYI, "testing log %d", 1);
+
+  found = 0;
+  for (i = 0; (! found) && (i < 50); i++) {
+    CPRT_SLEEP_MS(100);
+    if (system("./chk_log.sh -f x._tue -s \"2022/05/17 23:59:59.000005 FYI testing log 1\"") == 0) {
+      found = 1;
+    }
+  }
+  fprintf(stderr, "%d ms...", i*100);
+  CPRT_ASSERT(found);
 
   CPRT_ASSERT(is_file_readable("x._tue"));
   CPRT_ASSERT(! is_file_readable("x._wed"));
-  printf("OK.\n"); fflush(stdout);
+
+  fprintf(stderr, "OK.\n"); fflush(stdout);
 
 /*****************************************/
-  printf("Testing day rollover..."); fflush(stdout);
+  fprintf(stderr, "Testing day rollover..."); fflush(stdout);
+
   global_tv_sec = may_17_2022_11_59_59 + 1;
   lgr_log(lgr, LGR_SEV_FYI, "after midnight");
-  
+
+  /* Make sure tuesday's file ends correctly. */
+  found = 0;
+  for (i = 0; (! found) && (i < 50); i++) {
+    CPRT_SLEEP_MS(100);
+    if (system("./chk_log.sh -f x._tue -s \"2022/05/18 00:00:00.000007 FYI lgr: Closing file.\"") == 0) {
+      found = 1;
+    }
+  }
+  fprintf(stderr, "%d ms...", i*100);
+  CPRT_ASSERT(found);
+
   for (i = 0; i < 5000; i++) {
     CPRT_SLEEP_MS(1);
     if (is_file_readable("x._wed")) {
       break;
     }
   }
-  printf("%d ms...", i);
+  fprintf(stderr, "%d ms...", i);
   CPRT_ASSERT(is_file_readable("x._wed"));
-  printf("OK.\n"); fflush(stdout);
+
+  found = 0;
+  for (i = 0; (! found) && (i < 50); i++) {
+    CPRT_SLEEP_MS(100);
+    if (system("./chk_log.sh -f x._wed -s \"2022/05/18 00:00:00.000006 FYI after midnight\"") == 0) {
+      found = 1;
+    }
+  }
+  fprintf(stderr, "%d ms...", i*100);
+  CPRT_ASSERT(found);
+
+  fprintf(stderr, "OK.\n"); fflush(stdout);
 
 /*****************************************/
-  printf("Testing delete..."); fflush(stdout);
+  fprintf(stderr, "Testing delete..."); fflush(stdout);
   CPRT_ASSERT(lgr_delete(lgr) == LGR_ERR_OK);
 
-  printf("OK.\n"); fflush(stdout);
+  fprintf(stderr, "OK.\n"); fflush(stdout);
 
   return 0;
 }  /* main */
