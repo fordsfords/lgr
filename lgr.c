@@ -293,24 +293,44 @@ static char *wday2str[7] = {
   "sun", "mon", "tue", "wed", "thu", "fri", "sat"
 };
 
+
 void lgr_manage_file(lgr_t *lgr, int wday)
 {
   struct cprt_timeval cur_tv;
   struct tm tm_buf;
 
   if (lgr->cur_out_wday != wday) {
-    /* Need to open a new file. */
+    /* New day. Close yesterday's file. */
     if (lgr->cur_out_fp != NULL) {
+      CPRT_TIMEOFDAY(&cur_tv, NULL);
+      CPRT_LOCALTIME_R(&cur_tv.tv_sec, &tm_buf);  /* Parse time stamp. */
+      lgr->cur_file_size_bytes += fprintf(lgr->cur_out_fp,
+          "%04d/%02d/%02d %02d:%02d:%02d.%06d %s lgr: Closing file.\n",
+          tm_buf.tm_year + 1900, tm_buf.tm_mon + 1, tm_buf.tm_mday,
+          tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec,
+          (int)cur_tv.tv_usec, lgr_sev2str(LGR_SEV_FYI));
       fclose(lgr->cur_out_fp);
       lgr->cur_out_fp = NULL;
     }
 
+    /* Open new day's file. */
     snprintf(lgr->file_full_name, lgr->file_prefix_len + 5, "%s_%s",
         lgr->file_prefix, wday2str[wday]);
     CPRT_ASSERT(lgr->file_full_name[lgr->file_prefix_len + 4] == '\0');
     lgr->cur_out_fp = fopen(lgr->file_full_name, "w");
-
+    if (lgr->cur_out_fp == NULL) {
+      CPRT_PERRNO("ERROR: lgr: fopen failed");
+    }
     lgr->cur_file_size_bytes = 0;
+
+    CPRT_TIMEOFDAY(&cur_tv, NULL);
+    CPRT_LOCALTIME_R(&cur_tv.tv_sec, &tm_buf);  /* Parse time stamp. */
+    lgr->cur_file_size_bytes += fprintf(lgr->cur_out_fp,
+        "%04d/%02d/%02d %02d:%02d:%02d.%06d %s lgr: Opening file.\n",
+        tm_buf.tm_year + 1900, tm_buf.tm_mon + 1, tm_buf.tm_mday,
+        tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec,
+        (int)cur_tv.tv_usec, lgr_sev2str(LGR_SEV_FYI));
+
     lgr->cur_out_wday = wday;
   }
 
@@ -319,7 +339,7 @@ void lgr_manage_file(lgr_t *lgr, int wday)
       CPRT_TIMEOFDAY(&cur_tv, NULL);
       CPRT_LOCALTIME_R(&cur_tv.tv_sec, &tm_buf);  /* Parse time stamp. */
       lgr->cur_file_size_bytes += fprintf(lgr->cur_out_fp,
-          "%04d/%02d/%02d %02d:%02d:%02d.%06d %s lgr: log file size exceeded.\n",
+          "%04d/%02d/%02d %02d:%02d:%02d.%06d %s lgr: Log file size exceeded.\n",
           tm_buf.tm_year + 1900, tm_buf.tm_mon + 1, tm_buf.tm_mday,
           tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec,
           (int)cur_tv.tv_usec, lgr_sev2str(LGR_SEV_WARN));
@@ -354,7 +374,7 @@ void lgr_print_overflow(lgr_t *lgr, lgr_log_t *log)
   lgr_manage_file(lgr, tm_buf.tm_wday);
   if (lgr->cur_out_fp != NULL) {
     lgr->cur_file_size_bytes += fprintf(lgr->cur_out_fp,
-        "%04d/%02d/%02d %02d:%02d:%02d.%06d %s lgr: overflow, "
+        "%04d/%02d/%02d %02d:%02d:%02d.%06d %s lgr: Overflow, "
         "FYI:%u, ATTN:%u, WARN:%u, ERR:%u, FATAL:%u logs dropped over %f sec\n",
         tm_buf.tm_year + 1900, tm_buf.tm_mon + 1, tm_buf.tm_mday,
         tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec,
@@ -371,24 +391,24 @@ CPRT_THREAD_ENTRYPOINT lgr_thread(void *in_arg)
   lgr_t *lgr = (lgr_t *)in_arg;
   struct cprt_timeval cur_tv;
   struct tm tm_buf;
+  int need_flush;
   int quitting;
 
   lgr->cur_out_fp = NULL;
-  lgr->cur_out_wday = -1;
+  /* Guarantee first call to lgr_manage_file() results in "day change". */
+  lgr->cur_out_wday = 99;
 
   CPRT_TIMEOFDAY(&cur_tv, NULL);
   CPRT_LOCALTIME_R(&cur_tv.tv_sec, &tm_buf);  /* Parse time stamp. */
-printf("lgr_manage_file ???\n"); fflush(stdout);
   lgr_manage_file(lgr, tm_buf.tm_wday);
-printf("cur_out_fp=%p ???\n", lgr->cur_out_fp); fflush(stdout);
   if (lgr->cur_out_fp != NULL) {
     lgr->cur_file_size_bytes += fprintf(lgr->cur_out_fp,
-      "%04d/%02d/%02d %02d:%02d:%02d.%06d %s lgr: starting.\n",
+      "%04d/%02d/%02d %02d:%02d:%02d.%06d %s lgr: Starting.\n",
       tm_buf.tm_year + 1900, tm_buf.tm_mon + 1, tm_buf.tm_mday,
       tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec,
       (int)cur_tv.tv_usec, lgr_sev2str(LGR_SEV_FYI));
-printf("cur_file_size_bytes=%llu ???\n", lgr->cur_file_size_bytes); fflush(stdout);
   }
+  need_flush = 1;
 
   /* Release the "lgr_create()" call. */
   lgr->state = LGR_STATE_RUNNING;
@@ -397,12 +417,11 @@ printf("cur_file_size_bytes=%llu ???\n", lgr->cur_file_size_bytes); fflush(stdou
   while (! quitting) {
     lgr_log_t *log;
     qerr_t qerr;
-printf("q_deq\n"); fflush(stdout);
     while ((qerr = q_deq(lgr->log_q, (void **)&log)) == QERR_OK) {
-printf("type=%d\n", log->type); fflush(stdout);
+      need_flush = 1;
+
       if (log->type == LGR_LOG_TYPE_QUIT) {
-        quitting = 1;;
-        break;  /* Break out of "while q_deq" loop. */
+        quitting = 1;
       }
       else if (log->type == LGR_LOG_TYPE_OVERFLOW) {
         lgr_print_overflow(lgr, log);
@@ -447,29 +466,31 @@ printf("type=%d\n", log->type); fflush(stdout);
     }  /* while dequeue */
 
     if (! quitting) {
-printf("exit while dequeue, qerr=%d ???\n", qerr);
-      fflush(lgr->cur_out_fp);
-      /* Flush can take a while; see if another log is ready. */
+      /* Log queue empty, flush log file if needed. */
+      if (need_flush) {
+        if (lgr->cur_out_fp != NULL) {
+          fflush(lgr->cur_out_fp);
+        }
+        need_flush = 0;
+      }
+
+      /* If log queue still empty, sleep. */
       if (q_is_empty(lgr->log_q)) {
-printf("sleep_ms %d ???\n", lgr->sleep_ms);
-        CPRT_SLEEP_MS(lgr->sleep_ms);  /* No more logs; wait. */
+        CPRT_SLEEP_MS(lgr->sleep_ms);
       }
     }
   }  /* while ! quitting */
 
-printf("quitting ???\n"); fflush(stdout);
-  CPRT_LOCALTIME_R(&cur_tv.tv_sec, &tm_buf);  /* Parse time stamp. */
   CPRT_TIMEOFDAY(&cur_tv, NULL);
-  lgr_manage_file(lgr, tm_buf.tm_wday);
+  CPRT_LOCALTIME_R(&cur_tv.tv_sec, &tm_buf);  /* Parse time stamp. */
+  /* Don't call lgr_manage_file(). Don't want to create new file for exit. */
   if (lgr->cur_out_fp != NULL) {
     lgr->cur_file_size_bytes += fprintf(lgr->cur_out_fp,
-      "%04d/%02d/%02d %02d:%02d:%02d.%06d %s lgr: exiting.\n",
+      "%04d/%02d/%02d %02d:%02d:%02d.%06d %s lgr: Exiting.\n",
       tm_buf.tm_year + 1900, tm_buf.tm_mon + 1, tm_buf.tm_mday,
       tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec,
       (int)cur_tv.tv_usec, lgr_sev2str(LGR_SEV_FYI));
-  }
 
-  if (lgr->cur_out_fp != NULL) {
     fclose(lgr->cur_out_fp);
     lgr->cur_out_fp = NULL;
   }

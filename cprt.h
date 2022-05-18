@@ -12,6 +12,11 @@
 #ifndef CPRT_H
 #define CPRT_H
 
+/* Action to take on "fatal" error. */
+#define CPRT_ERR_EXIT do { \
+  exit(1); \
+} while (0)
+
 #if defined(_WIN32)
   #include <winsock2.h>
   #pragma comment(lib, "Ws2_32.lib")
@@ -95,7 +100,7 @@ extern "C" {
   #define CPRT_BASENAME(_p) ((strrchr(_p, '/') == NULL) ? (_p) : (strrchr(_p, '/')+1))
 #endif
 
-/* Macro to print errno in human-readable form and exit(1). */
+/* Macro to print errno in human-readable form. */
 #define CPRT_PERRNO(cprt_perrno_in_str_) do { \
   char cprt_perrno_errno_ = errno; \
   char cprt_perrno_errstr_[1024]; \
@@ -104,7 +109,6 @@ extern "C" {
       CPRT_BASENAME(__FILE__), __LINE__, cprt_perrno_in_str_, \
       cprt_perrno_errno_, cprt_perrno_errstr_); \
   fflush(stderr); \
-  exit(1); \
 } while (0)
 
 /* Use when non-zero means error. */
@@ -115,6 +119,7 @@ extern "C" {
     CPRT_SNPRINTF(cprt_eok0_errstr, sizeof(cprt_eok0_errstr), "'%s' is not 0", #cprt_eok0_expr); \
     errno = cprt_eok0_errno; \
     CPRT_PERRNO(cprt_eok0_errstr); \
+    CPRT_ERR_EXIT; \
   } \
 } while (0)
 
@@ -126,6 +131,7 @@ extern "C" {
     CPRT_SNPRINTF(cprt_enull_errstr, sizeof(cprt_enull_errstr), "'%s' is NULL", #cprt_enull_expr); \
     errno = cprt_enull_errno; \
     CPRT_PERRNO(cprt_enull_errstr); \
+    CPRT_ERR_EXIT; \
   } \
 } while (0)
 
@@ -137,6 +143,7 @@ extern "C" {
     CPRT_SNPRINTF(cprt_em1_errstr, sizeof(cprt_em1_errstr), "'%s' is -1", #cprt_em1_expr); \
     errno = cprt_em1_errno; \
     CPRT_PERRNO(cprt_em1_errstr); \
+    CPRT_ERR_EXIT; \
   } \
 } while (0)
 
@@ -145,7 +152,7 @@ extern "C" {
     fprintf(stderr, "ERROR (%s:%d): ERROR: '%s' not true\n", \
       CPRT_BASENAME(__FILE__), __LINE__, #cprt_assert_cond); \
     fflush(stderr); \
-    exit(1); \
+    CPRT_ERR_EXIT; \
   } \
 } while (0)
 
@@ -246,6 +253,7 @@ extern "C" {
     if (cprt_net_start_e != 0) { \
       errno = GetLastError(); \
       CPRT_PERRNO("WSACleanup"); \
+      CPRT_ERR_EXIT; \
     } \
   } while (0)
 
@@ -311,6 +319,7 @@ extern "C" {
       _got_it = 0; \
     } else { \
       CPRT_PERRNO("pthread_mutex_trylock"); \
+      CPRT_ERR_EXIT; \
     } \
   } while (0)
   #define CPRT_MUTEX_UNLOCK(_m) pthread_mutex_unlock(&(_m))
@@ -329,6 +338,7 @@ extern "C" {
         _got_it = 0; \
       } else { \
         CPRT_PERRNO("pthread_mutex_trylock"); \
+        CPRT_ERR_EXIT; \
       } \
     } while (0)
     #define CPRT_SPIN_UNLOCK(_m) pthread_mutex_unlock(&(_m))
@@ -345,6 +355,7 @@ extern "C" {
         _got_it = 0; \
       } else { \
         CPRT_PERRNO("pthread_mutex_trylock"); \
+        CPRT_ERR_EXIT; \
       } \
     } while (0)
     #define CPRT_SPIN_UNLOCK(_m) pthread_spin_unlock(&(_m))
@@ -360,6 +371,7 @@ extern "C" {
     if ((_s) == NULL) { \
       errno = GetLastError();\
       CPRT_PERRNO("CreateThread"); \
+      CPRT_ERR_EXIT; \
     } \
   } while (0)
   #define CPRT_SEM_DELETE(_s) do { \
@@ -367,6 +379,7 @@ extern "C" {
     if (rc_ == 0) { \
       errno = GetLastError();\
       CPRT_PERRNO("CreateThread"); \
+      CPRT_ERR_EXIT; \
     } \
   } while (0)
   #define CPRT_SEM_POST(_s) do { \
@@ -374,6 +387,7 @@ extern "C" {
     if (rc_ == 0) { \
       errno = GetLastError();\
       CPRT_PERRNO("CreateThread"); \
+      CPRT_ERR_EXIT; \
     } \
   } while (0)
   #define CPRT_SEM_WAIT(_s) do { \
@@ -405,6 +419,7 @@ extern "C" {
     if (_tid == NULL) {\
       errno = GetLastError();\
       CPRT_PERRNO("CreateThread"); \
+      CPRT_ERR_EXIT; \
     }\
   } while (0)
   #define CPRT_THREAD_EXIT do { ExitThread(0); } while (0)
@@ -471,13 +486,19 @@ char *cprt_strerror(int errnum, char *buffer, size_t buf_sz);
 void cprt_set_affinity(uint64_t in_mask);
 int cprt_try_affinity(uint64_t in_mask);
 void cprt_inittime();
-int cprt_timeofday(struct cprt_timeval *tv, void *unused_tz);
 void cprt_localtime_r(time_t *timep, struct tm *result);
 
 #if defined(_WIN32)
   int cprt_timeofday(struct cprt_timeval *tv, void *unused_tz);
   int cprt_win_gettime(struct cprt_timespec *tp);
 #endif
+
+
+extern int cprt_num_events;
+extern int cprt_events[1024];
+void cprt_event(int e);
+void cprt_dump_events();
+
 
 extern char* cprt_optarg;
 extern int cprt_optopt;

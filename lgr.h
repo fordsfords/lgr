@@ -18,12 +18,16 @@ To contact me, Steve Ford, project owner, you can find my email address
 at http://geeky-boy.com.  Can't see it?  Keep looking.
 */
 
+#ifndef LGR_H
+#define LGR_H
+
 #include <inttypes.h>
 #include "cprt.h"
 #include "q.h"
 
-#ifndef LGR_H
-#define LGR_H
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef unsigned int lgr_err_t;     /* See LGR_ERR_* definitions below. */
 
@@ -106,10 +110,6 @@ lgr_err_t lgr_create(lgr_t **rtn_lgr, unsigned int max_msg_size,
     char *file_prefix, int max_file_size_mb);
 lgr_err_t lgr_delete(lgr_t *lgr);
 lgr_err_t lgr_log(lgr_t *lgr, unsigned int severity, char *fmt, ...);
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 #if defined(__cplusplus)
 }

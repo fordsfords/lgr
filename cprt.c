@@ -186,6 +186,27 @@ int cprt_try_affinity(uint64_t in_mask)
 }  /* cprt_try_affinity */
 
 
+int cprt_num_events = 0;
+int cprt_events[1024];
+void cprt_event(int e)
+{
+  cprt_events[(CPRT_ATOMIC_INC_VAL(&cprt_num_events) - 1) % 1024] = e;
+}  /* cprt_event */
+
+void cprt_dump_events()
+{
+  int i, n;
+  n = cprt_num_events;
+  printf("cprt_num_events=%d\n", n);
+  for (i = 1; i <= 1024; i++) {
+    printf("  cprt_event[%d] = %d\n", (n - i), cprt_events[(n - i) % 1024]);
+    if (n == i) {
+      break;
+    }
+  }
+}  /* cprt_dump_events */
+
+
 /* Portable getopt(). */
 char* cprt_optarg;
 int cprt_optopt;
