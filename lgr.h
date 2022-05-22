@@ -93,11 +93,15 @@ struct lgr_s {
   q_t *pool_q;
   q_t *log_q;
   CPRT_SPIN_T log_lock;        /* Used unless LGR_FLAGS_NOLOCK. */
+
   CPRT_SPIN_T overflow_lock;   /* Always used, even if LGR_FLAGS_NOLOCK. */
   unsigned int overflows[LGR_LAST_SEV + 1];  /* Number of queue overflows. */
   lgr_log_t overflow_log;      /* Dedicated log for queue overflow. */
   lgr_log_t quit_log;          /* Dedicated log for shutting down. */
   int overflow_log_available;  /* 0 = not available. */
+
+  unsigned int file_size_drops[LGR_LAST_SEV + 1];
+
   CPRT_THREAD_T thread_id;
 };
 typedef struct lgr_s lgr_t;

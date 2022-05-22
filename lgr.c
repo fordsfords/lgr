@@ -90,7 +90,7 @@ lgr_err_t lgr_create(lgr_t **rtn_lgr, unsigned int max_msg_size,
   lgr_t *lgr = (lgr_t *)malloc(sizeof(lgr_t));
   if (lgr == NULL) { return LGR_ERR_MALLOC; }
 
-  lgr->max_msg_size = max_msg_size + 1;  /* Leave room for trailing NUL. */
+  lgr->max_msg_size = max_msg_size;
   lgr->q_size = q_size;
   lgr->sleep_ms = sleep_ms;
   lgr->flags = flags;
@@ -138,10 +138,12 @@ lgr_err_t lgr_create(lgr_t **rtn_lgr, unsigned int max_msg_size,
     lgr_delete(lgr); return LGR_ERR_MALLOC;
   }
 
-  /* Create log objects and add them to the pool. But create 2 fewer than
-   * the queue sizes to leave room for the "overflow" and "quit" logs. */
-  for (i = 0; i < (q_size - 2); i++) {
-    lgr_log_t *log = (lgr_log_t *)malloc(sizeof(lgr_log_t) + max_msg_size);
+  /* Create log objects and add them to the pool. But remember that the "q"
+   * can never be fuller than q_size - 1. Also, want to leave room for "quit"
+   * and "overflow" logs. So create 3 fewer than the queue size. */
+  for (i = 0; i < (q_size - 3); i++) {
+    /* Leave extra room in string buffer for NUL and truncate test. */
+    lgr_log_t *log = (lgr_log_t *)malloc(sizeof(lgr_log_t) + max_msg_size + 2);
     if (log == NULL) { lgr_delete(lgr); return LGR_ERR_MALLOC; }
 
     log->type = LGR_LOG_TYPE_MSG;
@@ -227,6 +229,7 @@ void lgr_enqueue_overflow(lgr_t *lgr, unsigned int severity)
   lgr->overflows[severity] ++;
 
   if (lgr->overflow_log_available) {
+    lgr->overflow_log_available = 0;
     CPRT_TIMEOFDAY(&(lgr->overflow_log.tv), NULL);
     qerr = q_enq(lgr->log_q, (void *)&(lgr->overflow_log));
     CPRT_ASSERT(qerr == QERR_OK);  /* The q_enq should always succeed. */
@@ -263,19 +266,22 @@ lgr_err_t lgr_log(lgr_t *lgr, unsigned int severity, char *fmt, ...)
   }
   CPRT_ASSERT(qerr == QERR_OK);
 
-  /* If user specified LGR_FLAGS_DEFER_TS, take timestamp in logger thread. */
+  /* If user specified LGR_FLAGS_DEFER_TS, take timestamp in logger thread.
+   * If not, then take timestamp now. */
   if (! (lgr->flags & LGR_FLAGS_DEFER_TS)) {
     /* LGR_FLAGS_DEFER_TS not specified, take timestamp here. */
     CPRT_TIMEOFDAY(&(log->tv), NULL);
   }
   log->severity = severity;
 
-  /* sprintf does not guarantee final NUL. Put one at the end to detect,
-   * sprintf overflow (in logger thread). */
-  log->msg[lgr->max_msg_size - 1] = '\0';
+  /* Truncate test: preset the NUL for the max allowable message.
+   * Then do the sprintf into the full buffer (2 larger max message).
+   * Then the logger thread checks the NUL for the max allowable message. */
+  log->msg[lgr->max_msg_size] = '\0';
 
   va_start(args, fmt);
-  vsnprintf(log->msg, lgr->max_msg_size, fmt, args);
+  /* Leave room for NUL and truncate test. */
+  vsnprintf(log->msg, lgr->max_msg_size + 2, fmt, args);
   va_end(args);
 
   qerr = q_enq(lgr->log_q, (void *)log);
@@ -350,7 +356,7 @@ void lgr_manage_file(lgr_t *lgr, int wday)
 }  /* lgr_manage_file */
 
 
-void lgr_print_overflow(lgr_t *lgr, lgr_log_t *log)
+void lgr_handle_oveflow(lgr_t *lgr, lgr_log_t *log)
 {
   unsigned int overflows[LGR_LAST_SEV + 1];
   struct cprt_timeval cur_tv;
@@ -361,6 +367,7 @@ void lgr_print_overflow(lgr_t *lgr, lgr_log_t *log)
 
   CPRT_TIMEOFDAY(&cur_tv, NULL);
   memcpy(overflows, lgr->overflows, sizeof(overflows));
+  memset(lgr->overflows, 0, sizeof(lgr->overflows));
   lgr->overflow_log_available = 1;
 
   CPRT_SPIN_UNLOCK(lgr->overflow_lock);
@@ -383,7 +390,7 @@ void lgr_print_overflow(lgr_t *lgr, lgr_log_t *log)
         overflows[LGR_SEV_WARN], overflows[LGR_SEV_ERR],
         overflows[LGR_SEV_FATAL], time_diff_sec);
   }
-}  /* lgr_print_overflow */
+}  /* lgr_handle_oveflow */
 
 
 CPRT_THREAD_ENTRYPOINT lgr_thread(void *in_arg)
@@ -424,16 +431,18 @@ CPRT_THREAD_ENTRYPOINT lgr_thread(void *in_arg)
         quitting = 1;
       }
       else if (log->type == LGR_LOG_TYPE_OVERFLOW) {
-        lgr_print_overflow(lgr, log);
+        lgr_handle_oveflow(lgr, log);
       }
       else if (log->type == LGR_LOG_TYPE_MSG) {
         if (lgr->flags & LGR_FLAGS_DEFER_TS) {
           CPRT_TIMEOFDAY(&(log->tv), NULL);
         }
+        /* Truncate test: log API preset the NUL for the max allowable message,
+         * then did the sprintf into the full buffer (2 larger max message).
+         * Now check the NUL for the max allowable message. */
         char *msg_suffix = "";
-        /* sprintf doesn't guarantee final NUL. If no NUL, msg too long. */
-        if (log->msg[lgr->max_msg_size - 1] != '\0') {
-          log->msg[lgr->max_msg_size - 1] = '\0';
+        if (log->msg[lgr->max_msg_size] != '\0') {
+          log->msg[lgr->max_msg_size] = '\0';
           msg_suffix = "...(message truncated)";
         }
 

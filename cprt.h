@@ -151,6 +151,7 @@ extern "C" {
   if (! (cprt_assert_cond)) { \
     fprintf(stderr, "ERROR (%s:%d): ERROR: '%s' not true\n", \
       CPRT_BASENAME(__FILE__), __LINE__, #cprt_assert_cond); \
+    if (cprt_num_events > 0) { cprt_dump_events(stderr); } \
     fflush(stderr); \
     CPRT_ERR_EXIT; \
   } \

@@ -44,34 +44,92 @@ low-latency applications that require low execution overhead.
 
 Features important to high-performance:
 * Zero malloc/free operation on application threads.
+
 * Zero kernel calls on application threads.
+
 * Zero thread contention between an application thread and the logger thread
 during normal operation.
 (Some possible contention if the application overloads and overflows the
 logger queue.
 Also note possible thread contention between multiple application threads
 logging at the same time; see [Spinlocks](spinlocks).)
+
 * High-precision microsecond timestamps using gettimeofday() (Unix) or
 GetSystemTimeAsFileTime() (Windows).
 
-Other features:
+* Weekday-based log file "rolling".
+To prevent log files do not grow to infinity,
+lgr keeps 7 log files, one for each day of the week.
 
-* Tracks "overflows" (when application is logging faster than the logging thread can write the logs).
+* Size-based log file limit.
+To prevent log files do not grow to infinity,
+lgr stops writing if the file exceeds a specified size limit.
+Note that lgr will write a warning when this happens.
+
+
+Other Features:
+
+* Tracks "overflows"
+(when application is logging faster than the logging thread can write the logs).
 Overflow is considered to be a problem in the application,
 and the lgr package is designed to handle it gracefully.
+
 * Intelligent flushing.
 When the logging thread writes a message to the log file,
 it checks to see if the queue has another message waiting.
 If so, it does not flush the I/O stream.
 But if the log queue is empty, it flushes.
+
 * Flush on exit.
 When the "lgr" object is deleted,
 it empties the log queue before closing the file and returning.
+
 * Optional no-lock flag for applications that can guarantee single-threaded
 API usage. Slight performance improvement, but no longer thread-safe.
+
 * Optional timestamp deferment to logger thread.
 Slight performance improvement, but timestamp can be inaccurate in proportion
 to queue length.
+In some cases, the inaccuracy can be tens of milliseconds.
+
+### Possible Unexpected Behaviours:
+
+#### Message Ordering
+
+Messages in the log file will sometimes appear to be out of order,
+based on the timestamps.
+This is not a bug.
+
+It is due to the fact that lgr sometimes internally generates a message,
+independently of the application.
+For example, if a midnight crossing happens since the last logged message,
+and the application logs something new,
+lgr will write a "Closing" message to and close the previous day's log file,
+and open a new one and write an "Opening" message to it.
+Then it writes the application's message to the new file.
+
+But note that the time stamp of the "Closing" and "Opening" messages will be
+*after* the application's log message, since they were generated afterwards.
+
+#### Messages In Wrong Day File
+
+It is not possible for lgr to close the previous day's
+file infinitesimally before  midnight and open the new one at exactly midnight.
+Instead, lgr uses an application log to trigger checking for the midnight
+crossing.
+For example, if the first message of a new day is written at 1 am,
+the "Closing" message written to the previous day's log file will have
+the new day's 1 am timestamp.
+
+#### Overwriting Existing Files
+
+If an application is running and logging information,
+and is then exited and restarted,
+the current day's log file will be overwritten.
+
+Some might prefer that restarting mid-day should simply start appending
+to the existing log file, and only overwrite on a midnight crossing.
+I can see how this would be a useful feature, but it is not implemented.
 
 ### Not For Everybody
 

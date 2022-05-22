@@ -186,22 +186,25 @@ int cprt_try_affinity(uint64_t in_mask)
 }  /* cprt_try_affinity */
 
 
+#define CPRT_MAX_EVENTS 1024
 int cprt_num_events = 0;
-int cprt_events[1024];
-void cprt_event(int e)
+int cprt_events[CPRT_MAX_EVENTS];
+void cprt_event(int event)
 {
-  cprt_events[(CPRT_ATOMIC_INC_VAL(&cprt_num_events) - 1) % 1024] = e;
+  cprt_events[(CPRT_ATOMIC_INC_VAL(&cprt_num_events) - 1) % CPRT_MAX_EVENTS] =
+      event;
 }  /* cprt_event */
 
-void cprt_dump_events()
+void cprt_dump_events(FILE *fd)
 {
   int i, n;
   n = cprt_num_events;
   printf("cprt_num_events=%d\n", n);
-  for (i = 1; i <= 1024; i++) {
-    printf("  cprt_event[%d] = %d\n", (n - i), cprt_events[(n - i) % 1024]);
+  for (i = 1; i <= CPRT_MAX_EVENTS; i++) {
+    fprintf(fd, "  cprt_event[%d] = %09d\n",
+        (n - i), cprt_events[(n - i) % CPRT_MAX_EVENTS]);
     if (n == i) {
-      break;
+      break;  /* There were less than CPRT_MAX_EVENTS events. */
     }
   }
 }  /* cprt_dump_events */
