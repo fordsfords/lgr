@@ -10,6 +10,7 @@ tmp.*
 
 # Executable
 lgr_test
+lgr_perf
 
 # Prerequisites
 *.d

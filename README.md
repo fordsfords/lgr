@@ -43,6 +43,9 @@ low-latency applications that require low execution overhead.
 ### Features
 
 Features important to high-performance:
+* 190 ns application thread execution time on 3.8 GHz Intel(R) i7-9800X,
+logging simple string. See "lgr_perf.c".
+
 * Zero malloc/free operation on application threads.
 
 * Zero kernel calls on application threads.
@@ -64,7 +67,8 @@ lgr keeps 7 log files, one for each day of the week.
 * Size-based log file limit.
 To prevent log files do not grow to infinity,
 lgr stops writing if the file exceeds a specified size limit.
-Note that lgr will write a warning when this happens.
+Note that lgr will write a warning when this happens,
+including the number of log messages dropped due to file size limit.
 
 
 Other Features:
@@ -130,6 +134,22 @@ the current day's log file will be overwritten.
 Some might prefer that restarting mid-day should simply start appending
 to the existing log file, and only overwrite on a midnight crossing.
 I can see how this would be a useful feature, but it is not implemented.
+
+#### Overflow vs. File Size Drops
+
+Overflows (writing logs too fast) and file size drops are similar in that
+messages are lost and counts are maintained of the number of lost messages.
+However, a log that overflows returns an error,
+whereas a log that is dropped due to file size returns success.
+Ideally file size drops would also return an error.
+
+However, the log API does not have reliable visibility of file size drops.
+For example, suppose that the file size is close to the limit,
+and there are several messages in the log queue.
+When a new log message is enqueued, the file size is not yet exceeded,
+so it returns success.
+But as log messages are dequeued, the file size can be exceeded,
+such that the successful message is dropped.
 
 ### Not For Everybody
 
@@ -276,4 +296,4 @@ Log rolling for 24x7 operation (Mon - Fri).
 
 ### Per-Thread Queues
 
-More perf, but complexity in ordering.
+Eliminates locks for message enqueuing, but increases complexity.
