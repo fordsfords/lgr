@@ -41,7 +41,7 @@ at http://geeky-boy.com.  Can't see it?  Keep looking.
 #undef gettimeofday
 #undef cprt_timeofday
 
-time_t global_tv_sec = may_17_2022_11_59_59;
+time_t global_tv_sec = may_17_2022_11_59_59;  /* Tuesday 11:59:59 pm. */
 time_t global_tv_usec = 0;
 int tst_timeofday(struct cprt_timeval *tv, void *unused_tz) 
 {
@@ -134,7 +134,7 @@ int main(int argc, char **argv)
 /*****************************************/
   fprintf(stderr, "Testing day rollover..."); fflush(stdout);
 
-  global_tv_sec = may_17_2022_11_59_59 + 1;
+  global_tv_sec ++;  /* Wednesday, 12:00:00. */
   CPRT_ASSERT(lgr_log(lgr, LGR_SEV_ATTN, "after midnight") == LGR_ERR_OK);
 
   /* Make sure tuesday's file ends correctly. */
@@ -378,12 +378,13 @@ int main(int argc, char **argv)
   CPRT_ASSERT(found);
 
   /* This one returns success but does not write. */
-  CPRT_ASSERT(lgr_log(lgr, LGR_SEV_WARN, "Not written 345678901234 %07d", i) == LGR_ERR_OK);
+  bytes += 65;
+  CPRT_ASSERT(lgr_log(lgr, LGR_SEV_WARN, "Not written 345678901234 %07d", bytes) == LGR_ERR_OK);
 
   found = 0;
   CPRT_SLEEP_MS(1);
   for (i = 1; i < 5000; i+=50) {
-    if (system("./chk_log.sh -f x._wed -s '2022/05/18 00:00:00.016154 WARN lgr: Log file size exceeded.'") == 0) {
+    if (system("./chk_log.sh -f x._wed -s '2022/05/18 00:00:00.016154 ERR lgr: Log file size exceeded.'") == 0) {
       found = 1;
       break;
     }
@@ -392,7 +393,63 @@ int main(int argc, char **argv)
   fprintf(stderr, "%d ms...", i);
   CPRT_ASSERT(found);
 
+  CPRT_ASSERT(lgr->file_size_drops[LGR_SEV_WARN] == 1);
+
   fprintf(stderr, "OK.\n"); fflush(stdout);
+
+  /* Midnight crossing creates empty file. */
+  global_tv_sec += (60 * 60 * 24); /* Cross to Thursday, 12:00:00. */
+  bytes += 65;
+  CPRT_ASSERT(lgr_log(lgr, LGR_SEV_WARN, "New day, works 678901234 %07d", bytes) == LGR_ERR_OK);
+
+  found = 0;
+  CPRT_SLEEP_MS(1);
+  for (i = 1; i < 5000; i+=50) {
+    if (system("./chk_log.sh -l 1 -f x._thu -s '2022/05/19 00:00:00.016156 FYI lgr: Opening file.'") == 0) {
+      found = 1;
+      break;
+    }
+    else { CPRT_SLEEP_MS(50); }
+  }
+  fprintf(stderr, "%d ms...", i);
+  CPRT_ASSERT(found);
+
+  found = 0;
+  CPRT_SLEEP_MS(1);
+  for (i = 1; i < 5000; i+=50) {
+    if (system("./chk_log.sh -l 2 -f x._thu -s '2022/05/19 00:00:00.016157 ERR lgr: File size drops, FYI:0, ATTN:0, WARN:1, ERR:0, FATAL:0 logs dropped'") == 0) {
+      found = 1;
+      break;
+    }
+    else { CPRT_SLEEP_MS(50); }
+  }
+  fprintf(stderr, "%d ms...", i);
+  CPRT_ASSERT(found);
+
+  found = 0;
+  CPRT_SLEEP_MS(1);
+  for (i = 1; i < 5000; i+=50) {
+    if (system("./chk_log.sh -f x._thu -s '2022/05/19 00:00:00.016155 WARN New day, works 678901234 1048719'") == 0) {
+      found = 1;
+      break;
+    }
+    else { CPRT_SLEEP_MS(50); }
+  }
+  fprintf(stderr, "%d ms...", i);
+  CPRT_ASSERT(found);
+
+  /* But Thusday never gets a closing file msg. */
+  found = 0;
+  CPRT_SLEEP_MS(1);
+  for (i = 1; i < 5000; i+=50) {
+    if (system("./chk_log.sh -f x._wed -s '2022/05/18 00:00:00.016154 ERR lgr: Log file size exceeded.'") == 0) {
+      found = 1;
+      break;
+    }
+    else { CPRT_SLEEP_MS(50); }
+  }
+  fprintf(stderr, "%d ms...", i);
+  CPRT_ASSERT(found);
 
 /*****************************************/
   fprintf(stderr, "Testing delete again..."); fflush(stdout);
@@ -402,7 +459,7 @@ int main(int argc, char **argv)
   found = 0;
   CPRT_SLEEP_MS(1);
   for (i = 1; i < 5000; i+=50) {
-    if (system("./chk_log.sh -f x._wed -s '2022/05/18 00:00:00.016154 WARN lgr: Log file size exceeded.'") == 0) {
+    if (system("./chk_log.sh -f x._wed -s '2022/05/18 00:00:00.016154 ERR lgr: Log file size exceeded.'") == 0) {
       found = 1;
       break;
     }

@@ -103,9 +103,10 @@ lgr_err_t lgr_create(lgr_t **rtn_lgr, unsigned int max_msg_size,
   lgr->pool_q = NULL;
   lgr->log_q = NULL;
 
-  /* Per-severity overflow counters. */
+  /* Per-severity counters. */
   for (i = 0; i <= LGR_LAST_SEV; i++) {
     lgr->overflows[i] = 0;
+    lgr->file_size_drops[i] = 0;
   }
   lgr->overflow_log.type = LGR_LOG_TYPE_OVERFLOW;
   lgr->overflow_log_available = 1;
@@ -284,8 +285,8 @@ lgr_err_t lgr_log(lgr_t *lgr, unsigned int severity, char *fmt, ...)
   vsnprintf(log->msg, lgr->max_msg_size + 2, fmt, args);
   va_end(args);
 
-  qerr = q_enq(lgr->log_q, (void *)log);
-  CPRT_ASSERT(qerr == QERR_OK);  /* The q_enq should always succeed. */
+  /* The log queue should always have room. */
+  CPRT_ASSERT(q_enq(lgr->log_q, (void *)log) == QERR_OK);
 
   if (! (lgr->flags & LGR_FLAGS_NOLOCK)) {
     CPRT_SPIN_UNLOCK(lgr->log_lock);
@@ -341,6 +342,9 @@ void lgr_manage_file(lgr_t *lgr, int wday)
   }
 
   if (lgr->cur_out_fp != NULL) {
+    unsigned int drops[LGR_LAST_SEV + 1];
+    int i, tot_file_size_drops;
+
     if (lgr->cur_file_size_bytes >= lgr->max_file_size_bytes) {
       CPRT_TIMEOFDAY(&cur_tv, NULL);
       CPRT_LOCALTIME_R(&cur_tv.tv_sec, &tm_buf);  /* Parse time stamp. */
@@ -348,9 +352,30 @@ void lgr_manage_file(lgr_t *lgr, int wday)
           "%04d/%02d/%02d %02d:%02d:%02d.%06d %s lgr: Log file size exceeded.\n",
           tm_buf.tm_year + 1900, tm_buf.tm_mon + 1, tm_buf.tm_mday,
           tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec,
-          (int)cur_tv.tv_usec, lgr_sev2str(LGR_SEV_WARN));
+          (int)cur_tv.tv_usec, lgr_sev2str(LGR_SEV_ERR));
       fclose(lgr->cur_out_fp);
       lgr->cur_out_fp = NULL;
+    }
+
+    tot_file_size_drops = 0;
+    for (i = 0; i <= LGR_LAST_SEV; i++) {
+      drops[i] = lgr->file_size_drops[i];
+      tot_file_size_drops += lgr->file_size_drops[i];
+      lgr->file_size_drops[i] = 0;
+    }
+    if (tot_file_size_drops > 0) {
+      CPRT_TIMEOFDAY(&cur_tv, NULL);
+      CPRT_LOCALTIME_R(&cur_tv.tv_sec, &tm_buf);  /* Parse time stamp. */
+      lgr->cur_file_size_bytes += fprintf(lgr->cur_out_fp,
+          "%04d/%02d/%02d %02d:%02d:%02d.%06d %s lgr: File size drops, "
+            "FYI:%u, ATTN:%u, WARN:%u, ERR:%u, FATAL:%u "
+            "logs dropped\n",
+          tm_buf.tm_year + 1900, tm_buf.tm_mon + 1, tm_buf.tm_mday,
+          tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec,
+          (int)cur_tv.tv_usec, lgr_sev2str(LGR_SEV_ERR),
+          drops[LGR_SEV_FYI], drops[LGR_SEV_ATTN],
+          drops[LGR_SEV_WARN], drops[LGR_SEV_ERR],
+          drops[LGR_SEV_FATAL]);
     }
   }
 }  /* lgr_manage_file */
@@ -362,35 +387,80 @@ void lgr_handle_oveflow(lgr_t *lgr, lgr_log_t *log)
   struct cprt_timeval cur_tv;
   struct tm tm_buf;
   double time_diff_sec;
+  unsigned int tot_overflows;
+  int i;
 
   CPRT_SPIN_LOCK(lgr->overflow_lock);
 
   CPRT_TIMEOFDAY(&cur_tv, NULL);
-  memcpy(overflows, lgr->overflows, sizeof(overflows));
-  memset(lgr->overflows, 0, sizeof(lgr->overflows));
+
+  tot_overflows = 0;
+  for (i = 0; i <= LGR_LAST_SEV; i++) {
+    overflows[i] = lgr->overflows[i];
+    tot_overflows += lgr->overflows[i];
+    lgr->overflows[i] = 0;
+  }
   lgr->overflow_log_available = 1;
 
   CPRT_SPIN_UNLOCK(lgr->overflow_lock);
 
-  time_diff_sec = cur_tv.tv_sec;
-  time_diff_sec -= log->tv.tv_sec;
-  time_diff_sec += (double)cur_tv.tv_usec / (double)1000000;
-  time_diff_sec -= (double)log->tv.tv_usec / (double)1000000;
+  if (tot_overflows > 0) {
+    time_diff_sec = cur_tv.tv_sec;
+    time_diff_sec -= log->tv.tv_sec;
+    time_diff_sec += (double)cur_tv.tv_usec / (double)1000000;
+    time_diff_sec -= (double)log->tv.tv_usec / (double)1000000;
+
+    CPRT_LOCALTIME_R(&(log->tv.tv_sec), &tm_buf);  /* Parse time stamp. */
+    lgr_manage_file(lgr, tm_buf.tm_wday);
+    if (lgr->cur_out_fp != NULL) {
+      lgr->cur_file_size_bytes += fprintf(lgr->cur_out_fp,
+          "%04d/%02d/%02d %02d:%02d:%02d.%06d %s lgr: Overflow, "
+            "FYI:%u, ATTN:%u, WARN:%u, ERR:%u, FATAL:%u "
+            "logs dropped over %f sec\n",
+          tm_buf.tm_year + 1900, tm_buf.tm_mon + 1, tm_buf.tm_mday,
+          tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec,
+          (int)log->tv.tv_usec, lgr_sev2str(LGR_SEV_ERR),
+          overflows[LGR_SEV_FYI], overflows[LGR_SEV_ATTN],
+          overflows[LGR_SEV_WARN], overflows[LGR_SEV_ERR],
+          overflows[LGR_SEV_FATAL], time_diff_sec);
+    }
+  }
+}  /* lgr_handle_oveflow */
+
+
+void lgr_handle_log(lgr_t *lgr, lgr_log_t *log)
+{
+  struct tm tm_buf;
+
+  if (lgr->flags & LGR_FLAGS_DEFER_TS) {
+    CPRT_TIMEOFDAY(&(log->tv), NULL);
+  }
+  /* Truncate test: log API preset the NUL for the max allowable message,
+   * then did the sprintf into the full buffer (2 larger max message).
+   * Now check the NUL for the max allowable message. */
+  char *msg_suffix = "";
+  if (log->msg[lgr->max_msg_size] != '\0') {
+    log->msg[lgr->max_msg_size] = '\0';
+    msg_suffix = "...(message truncated)";
+  }
 
   CPRT_LOCALTIME_R(&(log->tv.tv_sec), &tm_buf);  /* Parse time stamp. */
   lgr_manage_file(lgr, tm_buf.tm_wday);
   if (lgr->cur_out_fp != NULL) {
     lgr->cur_file_size_bytes += fprintf(lgr->cur_out_fp,
-        "%04d/%02d/%02d %02d:%02d:%02d.%06d %s lgr: Overflow, "
-        "FYI:%u, ATTN:%u, WARN:%u, ERR:%u, FATAL:%u logs dropped over %f sec\n",
+        "%04d/%02d/%02d %02d:%02d:%02d.%06d %s %s%s\n",
         tm_buf.tm_year + 1900, tm_buf.tm_mon + 1, tm_buf.tm_mday,
         tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec,
-        (int)log->tv.tv_usec, lgr_sev2str(LGR_SEV_ERR),
-        overflows[LGR_SEV_FYI], overflows[LGR_SEV_ATTN],
-        overflows[LGR_SEV_WARN], overflows[LGR_SEV_ERR],
-        overflows[LGR_SEV_FATAL], time_diff_sec);
+        (int)log->tv.tv_usec, lgr_sev2str(log->severity), log->msg,
+        msg_suffix);
   }
-}  /* lgr_handle_oveflow */
+  else {  /* File closed, accumulate file size drops. */
+    CPRT_ASSERT(log->severity >= 0 && log->severity <= LGR_LAST_SEV);
+    lgr->file_size_drops[log->severity] ++;
+  }
+
+  CPRT_ASSERT(q_enq(lgr->pool_q, (void *)log) == QERR_OK);
+}  /* lgr_handle_log */
 
 
 CPRT_THREAD_ENTRYPOINT lgr_thread(void *in_arg)
@@ -434,29 +504,7 @@ CPRT_THREAD_ENTRYPOINT lgr_thread(void *in_arg)
         lgr_handle_oveflow(lgr, log);
       }
       else if (log->type == LGR_LOG_TYPE_MSG) {
-        if (lgr->flags & LGR_FLAGS_DEFER_TS) {
-          CPRT_TIMEOFDAY(&(log->tv), NULL);
-        }
-        /* Truncate test: log API preset the NUL for the max allowable message,
-         * then did the sprintf into the full buffer (2 larger max message).
-         * Now check the NUL for the max allowable message. */
-        char *msg_suffix = "";
-        if (log->msg[lgr->max_msg_size] != '\0') {
-          log->msg[lgr->max_msg_size] = '\0';
-          msg_suffix = "...(message truncated)";
-        }
-
-        CPRT_LOCALTIME_R(&(log->tv.tv_sec), &tm_buf);  /* Parse time stamp. */
-        lgr_manage_file(lgr, tm_buf.tm_wday);
-        if (lgr->cur_out_fp != NULL) {
-          lgr->cur_file_size_bytes += fprintf(lgr->cur_out_fp,
-              "%04d/%02d/%02d %02d:%02d:%02d.%06d %s %s%s\n",
-              tm_buf.tm_year + 1900, tm_buf.tm_mon + 1, tm_buf.tm_mday,
-              tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec,
-              (int)log->tv.tv_usec, lgr_sev2str(log->severity), log->msg,
-              msg_suffix);
-        }
-        qerr = q_enq(lgr->pool_q, (void *)log);
+        lgr_handle_log(lgr, log);
       }
       else {  /* Bad log type; log object corrupted? */
         CPRT_TIMEOFDAY(&cur_tv, NULL);
@@ -473,6 +521,7 @@ CPRT_THREAD_ENTRYPOINT lgr_thread(void *in_arg)
         /* Corrupted log object, do not put it into the pool. */
       }
     }  /* while dequeue */
+    CPRT_ASSERT(qerr == QERR_EMPTY);
 
     if (! quitting) {
       /* Log queue empty, flush log file if needed. */
