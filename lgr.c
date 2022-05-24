@@ -40,6 +40,9 @@ CPRT_THREAD_ENTRYPOINT lgr_thread(void *in_arg);
  * It is used by the lgr_err2str() function. */
 static char *lgr_errs[LGR_LAST_ERR + 3] = {
   "OK",
+  "QSIZE",
+  "MSGSIZE",
+  "FILESIZE",
   "MALLOC",
   "QFULL",
   "EXITING",
@@ -81,13 +84,33 @@ char *lgr_sev2str(lgr_sev_t lgr_sev)
 }  /* lgr_sev2str */
 
 
+/* Internal function: return 1 if power of 2 */
+static int is_power_2(unsigned int n)
+{
+    /* Thanks to Alex Allain for this cute algo.
+     * https://www.cprogramming.com/tutorial/powtwosol.html */
+    return ((n-1) & n) == 0;
+}  /* is_power_2 */
+
+
 lgr_err_t lgr_create(lgr_t **rtn_lgr, unsigned int max_msg_size,
     unsigned int q_size, unsigned int sleep_ms, uint32_t flags,
     char *file_prefix, int max_file_size_mb)
 {
   int i;
   qerr_t qerr;
-  lgr_t *lgr = (lgr_t *)malloc(sizeof(lgr_t));
+  lgr_t *lgr = NULL;
+
+  /* Sanity: make sure lgr error codes are in sync with strings. */
+  CPRT_ASSERT(LGR_LAST_ERR == BAD_LGR_ERR - 1);
+  /* Sanity: make sure severity codes are in sync with strings. */
+  CPRT_ASSERT(LGR_LAST_SEV == BAD_LGR_SEV - 1);
+
+  if (max_msg_size <= 0) { return LGR_ERR_MSGSIZE; }
+  if ((q_size <= 0) || (! is_power_2(q_size))) { return LGR_ERR_QSIZE; }
+  if (max_file_size_mb <= 0) { return LGR_ERR_FILESIZE; }
+
+  lgr = malloc(sizeof(lgr_t));
   if (lgr == NULL) { return LGR_ERR_MALLOC; }
 
   lgr->max_msg_size = max_msg_size;

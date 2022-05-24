@@ -29,16 +29,23 @@ at http://geeky-boy.com.  Can't see it?  Keep looking.
 extern "C" {
 #endif
 
+/* Values for lgr_create() flags parameter (and lgr_t.flags field). */
+#define LGR_FLAGS_NOLOCK   0x00000001
+#define LGR_FLAGS_DEFER_TS 0x00000002
+
 typedef unsigned int lgr_err_t;     /* See LGR_ERR_* definitions below. */
 
 /* Most lgr APIs return "lgr_err_t".  These definitions must
  * be kept in sync with the "lgr_errs" string array in "lgr.c". */
 #define LGR_ERR_OK 0       /* Success. */
-#define LGR_ERR_MALLOC 1   /* No memory available. */
-#define LGR_ERR_QFULL 2    /* No room in queue. */
-#define LGR_ERR_EXITING 3  /* Lgr is exiting. */
-#define LGR_ERR_SEVERITY 4 /* Bad severity value. */
-#define LGR_LAST_ERR 4     /* Set to value of last "LGR_ERR_*" definition. */
+#define LGR_ERR_QSIZE 1    /* Supplied q_size is not a power of 2. */
+#define LGR_ERR_MSGSIZE 2  /* Supplied max_msg_size not > 0. */
+#define LGR_ERR_FILESIZE 3 /* Supplied max_msg_size not > 0. */
+#define LGR_ERR_MALLOC 4   /* No memory available. */
+#define LGR_ERR_QFULL 5    /* No room in queue. */
+#define LGR_ERR_EXITING 6  /* Lgr is exiting. */
+#define LGR_ERR_SEVERITY 7 /* Bad severity value. */
+#define LGR_LAST_ERR 7     /* Set to value of last "LGR_ERR_*" definition. */
 
 
 typedef unsigned int lgr_sev_t;  /* See LGR_SEV_* definitions below. */
@@ -65,10 +72,6 @@ struct lgr_log_s {
   char msg[1];
 };
 typedef struct lgr_log_s lgr_log_t;
-
-/* Values for lgr_t.flags */
-#define LGR_FLAGS_NOLOCK   0x00000001
-#define LGR_FLAGS_DEFER_TS 0x00000002
 
 /* Values for lgr_t.state */
 #define LGR_STATE_INITIALIZING 1
