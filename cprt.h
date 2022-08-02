@@ -12,16 +12,54 @@
 #ifndef CPRT_H
 #define CPRT_H
 
+/* Action to take on "fatal" error. */
+#define CPRT_ERR_EXIT do { \
+  exit(1); \
+} while (0)
+
 #if defined(_WIN32)
   #include <winsock2.h>
   #pragma comment(lib, "Ws2_32.lib")
   #pragma warning(disable : 4996)
+  typedef unsigned __int8 uint8_t;
+  typedef unsigned __int16 uint16_t;
+  typedef unsigned __int32 uint32_t;
+  typedef unsigned __int64 uint64_t;
+  /* C99 printf format macros missing from VC. */
+  #define PRId8 "d"
+  #define PRId16 "d"
+  #define PRId32 "d"
+  #define PRId64 "I64d"
+  #define PRIu8 "u"
+  #define PRIu16 "u"
+  #define PRIu32 "u"
+  #define PRIu64 "I64u"
+  #define PRIx8 "x"
+  #define PRIx16 "x"
+  #define PRIx32 "x"
+  #define PRIx64 "I64x"
+  #define PRIuSZ "Iu"
+  /* C99 scanf format macros missing from VC. */
+  #define SCNd8 "d"
+  #define SCNd16 "hd"
+  #define SCNd32 "ld"
+  #define SCNd64 "I64d"
+  #define SCNu8 "u"
+  #define SCNu16 "hu"
+  #define SCNu32 "lu"
+  #define SCNu64 "I64u"
+  #define SCNx64 "I64x"
+  #define SCNuSZ "Iu"
+  #define SCNuSZcast(x) (size_t * )(x)
+
+  #define strtoll _strtoi64
+  #define strtoull _strtoui64
 
 #else  /* Unix */
   #include <unistd.h>
-  #include <stdlib.h>
   #include <errno.h>
   #include <time.h>
+  #include <sys/time.h>
   #include <pthread.h>
   #if defined(__APPLE__)
     #include <dispatch/dispatch.h>
@@ -29,13 +67,30 @@
     #include <sched.h>
     #include <semaphore.h>
   #endif
+  #include <inttypes.h>
 #endif
 
-#include <inttypes.h>
+#include <stdlib.h>
 
 
 #ifdef __cplusplus
 extern "C" {
+#endif
+
+#if defined(_WIN32)
+  #define CPRT_TIMEOFDAY cprt_timeofday
+#else  /* Unix */
+  #define CPRT_TIMEOFDAY gettimeofday
+#endif
+#define CPRT_LOCALTIME_R cprt_localtime_r
+
+
+#if defined(_WIN32)
+  #define CPRT_ATOMIC_INC_VAL(_p) InterlockedIncrement(_p)
+  #define CPRT_ATOMIC_DEC_VAL(_p) InterlockedDecrement(_p)
+#else  /* Unix */
+  #define CPRT_ATOMIC_INC_VAL(_p) __sync_add_and_fetch(_p, 1)
+  #define CPRT_ATOMIC_DEC_VAL(_p) __sync_sub_and_fetch(_p, 1)
 #endif
 
 /* Macro to approximate the basename() function. */
@@ -45,7 +100,7 @@ extern "C" {
   #define CPRT_BASENAME(_p) ((strrchr(_p, '/') == NULL) ? (_p) : (strrchr(_p, '/')+1))
 #endif
 
-/* Macro to print errno in human-readable form and exit(1). */
+/* Macro to print errno in human-readable form. */
 #define CPRT_PERRNO(cprt_perrno_in_str_) do { \
   char cprt_perrno_errno_ = errno; \
   char cprt_perrno_errstr_[1024]; \
@@ -54,7 +109,6 @@ extern "C" {
       CPRT_BASENAME(__FILE__), __LINE__, cprt_perrno_in_str_, \
       cprt_perrno_errno_, cprt_perrno_errstr_); \
   fflush(stderr); \
-  exit(1); \
 } while (0)
 
 /* Use when non-zero means error. */
@@ -65,6 +119,7 @@ extern "C" {
     CPRT_SNPRINTF(cprt_eok0_errstr, sizeof(cprt_eok0_errstr), "'%s' is not 0", #cprt_eok0_expr); \
     errno = cprt_eok0_errno; \
     CPRT_PERRNO(cprt_eok0_errstr); \
+    CPRT_ERR_EXIT; \
   } \
 } while (0)
 
@@ -76,6 +131,7 @@ extern "C" {
     CPRT_SNPRINTF(cprt_enull_errstr, sizeof(cprt_enull_errstr), "'%s' is NULL", #cprt_enull_expr); \
     errno = cprt_enull_errno; \
     CPRT_PERRNO(cprt_enull_errstr); \
+    CPRT_ERR_EXIT; \
   } \
 } while (0)
 
@@ -87,6 +143,7 @@ extern "C" {
     CPRT_SNPRINTF(cprt_em1_errstr, sizeof(cprt_em1_errstr), "'%s' is -1", #cprt_em1_expr); \
     errno = cprt_em1_errno; \
     CPRT_PERRNO(cprt_em1_errstr); \
+    CPRT_ERR_EXIT; \
   } \
 } while (0)
 
@@ -94,8 +151,9 @@ extern "C" {
   if (! (cprt_assert_cond)) { \
     fprintf(stderr, "ERROR (%s:%d): ERROR: '%s' not true\n", \
       CPRT_BASENAME(__FILE__), __LINE__, #cprt_assert_cond); \
+    if (cprt_num_events > 0) { cprt_dump_events(stderr); } \
     fflush(stderr); \
-    exit(1); \
+    CPRT_ERR_EXIT; \
   } \
 } while (0)
 
@@ -196,6 +254,7 @@ extern "C" {
     if (cprt_net_start_e != 0) { \
       errno = GetLastError(); \
       CPRT_PERRNO("WSACleanup"); \
+      CPRT_ERR_EXIT; \
     } \
   } while (0)
 
@@ -234,7 +293,14 @@ extern "C" {
   #define CPRT_MUTEX_UNLOCK(_m) LeaveCriticalSection(&(_m))
   #define CPRT_MUTEX_DELETE(_m) DeleteCriticalSection(&(_m))
 
-#else  /* Unix */
+  #define CPRT_SPIN_T CRITICAL_SECTION
+  #define CPRT_SPIN_INIT(_m) InitializeCriticalSectionAndSpinCount((&_m), -1)
+  #define CPRT_SPIN_LOCK(_m) EnterCriticalSection(&(_m))
+  #define CPRT_SPIN_TRYLOCK(_got_it, _m) (_got_it) = TryEnterCriticalSection(&(_m))
+  #define CPRT_SPIN_UNLOCK(_m) LeaveCriticalSection(&(_m))
+  #define CPRT_SPIN_DELETE(_m) DeleteCriticalSection(&(_m))
+
+#else  /* Unixes. */
   #define CPRT_MUTEX_T pthread_mutex_t
   #define CPRT_MUTEX_INIT_RECURSIVE(_m) do { \
     pthread_mutexattr_t _mutexattr; \
@@ -254,10 +320,48 @@ extern "C" {
       _got_it = 0; \
     } else { \
       CPRT_PERRNO("pthread_mutex_trylock"); \
+      CPRT_ERR_EXIT; \
     } \
   } while (0)
   #define CPRT_MUTEX_UNLOCK(_m) pthread_mutex_unlock(&(_m))
   #define CPRT_MUTEX_DELETE(_m) pthread_mutex_destroy(&(_m))
+
+  #if defined(__APPLE__)
+    /* Apparently spinlocks are a no-no on newer MacOS. */
+    #define CPRT_SPIN_T pthread_mutex_t
+    #define CPRT_SPIN_INIT(_m) CPRT_EOK0(errno = pthread_mutex_init(&(_m), NULL))
+    #define CPRT_SPIN_LOCK(_m) CPRT_EOK0(errno = pthread_mutex_lock(&(_m)))
+    #define CPRT_SPIN_TRYLOCK(_got_it, _m) do { \
+      errno = pthread_mutex_trylock(&(_m)); \
+      if (errno == 0) { \
+        _got_it = 1; \
+      } else if (errno == EBUSY) { \
+        _got_it = 0; \
+      } else { \
+        CPRT_PERRNO("pthread_mutex_trylock"); \
+        CPRT_ERR_EXIT; \
+      } \
+    } while (0)
+    #define CPRT_SPIN_UNLOCK(_m) pthread_mutex_unlock(&(_m))
+    #define CPRT_SPIN_DELETE(_m) pthread_mutex_destroy(&(_m))
+  #else  /* Non-Apple Unixes */
+    #define CPRT_SPIN_T pthread_spinlock_t
+    #define CPRT_SPIN_INIT(_m) pthread_spin_init(&(_m), PTHREAD_PROCESS_PRIVATE)
+    #define CPRT_SPIN_LOCK(_m) pthread_spin_lock(&(_m))
+    #define CPRT_SPIN_TRYLOCK(_got_it, _m) do { \
+      errno = pthread_spin_trylock(&(_m)); \
+      if (errno == 0) { \
+        _got_it = 1; \
+      } else if (errno == EBUSY) { \
+        _got_it = 0; \
+      } else { \
+        CPRT_PERRNO("pthread_mutex_trylock"); \
+        CPRT_ERR_EXIT; \
+      } \
+    } while (0)
+    #define CPRT_SPIN_UNLOCK(_m) pthread_spin_unlock(&(_m))
+    #define CPRT_SPIN_DELETE(_m) pthread_spin_destroy(&(_m))
+  #endif
 #endif
 
 
@@ -268,6 +372,7 @@ extern "C" {
     if ((_s) == NULL) { \
       errno = GetLastError();\
       CPRT_PERRNO("CreateThread"); \
+      CPRT_ERR_EXIT; \
     } \
   } while (0)
   #define CPRT_SEM_DELETE(_s) do { \
@@ -275,6 +380,7 @@ extern "C" {
     if (rc_ == 0) { \
       errno = GetLastError();\
       CPRT_PERRNO("CreateThread"); \
+      CPRT_ERR_EXIT; \
     } \
   } while (0)
   #define CPRT_SEM_POST(_s) do { \
@@ -282,6 +388,7 @@ extern "C" {
     if (rc_ == 0) { \
       errno = GetLastError();\
       CPRT_PERRNO("CreateThread"); \
+      CPRT_ERR_EXIT; \
     } \
   } while (0)
   #define CPRT_SEM_WAIT(_s) do { \
@@ -313,6 +420,7 @@ extern "C" {
     if (_tid == NULL) {\
       errno = GetLastError();\
       CPRT_PERRNO("CreateThread"); \
+      CPRT_ERR_EXIT; \
     }\
   } while (0)
   #define CPRT_THREAD_EXIT do { ExitThread(0); } while (0)
@@ -345,16 +453,28 @@ extern "C" {
 
 #define CPRT_INITTIME cprt_inittime
 #if defined(_WIN32)
-  struct timespec {
-    long tv_sec;
+  struct cprt_timeval {
+    time_t tv_sec;
+    long tv_usec;
+  };
+  struct cprt_timespec {
+    time_t tv_sec;
     long tv_nsec;
-  }
+  };
   #define CPRT_GETTIME(_ts) cprt_gettime(_ts)
+  void cprt_inittime();
+  void cprt_gettime(struct cprt_timespec *ts);
+  
 #elif defined(__APPLE__)
   #define CPRT_GETTIME(_ts) clock_gettime(CLOCK_MONOTONIC_RAW, _ts)
+  #define cprt_timeval timeval
+  #define cprt_timespec timespec
 #else  /* Non-Apple Unixes */
   #define CPRT_GETTIME(_ts) clock_gettime(CLOCK_MONOTONIC, _ts)
+  #define cprt_timeval timeval
+  #define cprt_timespec timespec
 #endif
+
 #define CPRT_DIFF_TS(diff_ts_result_ns_, diff_ts_end_ts_, diff_ts_start_ts_) do { \
   (diff_ts_result_ns_) = (((uint64_t)diff_ts_end_ts_.tv_sec \
                            - (uint64_t)diff_ts_start_ts_.tv_sec) * 1000000000 \
@@ -367,15 +487,25 @@ char *cprt_strerror(int errnum, char *buffer, size_t buf_sz);
 void cprt_set_affinity(uint64_t in_mask);
 int cprt_try_affinity(uint64_t in_mask);
 void cprt_inittime();
+void cprt_localtime_r(time_t *timep, struct tm *result);
 
 #if defined(_WIN32)
-int cprt_win_gettime(struct timespec *tp);
-extern char* optarg;
-extern int optopt;
-extern int optind;
-extern int opterr;
-int getopt(int argc, char* const argv[], const char* optstring);
+  int cprt_timeofday(struct cprt_timeval *tv, void *unused_tz);
+  int cprt_win_gettime(struct cprt_timespec *tp);
 #endif
+
+
+extern int cprt_num_events;
+extern int cprt_events[1024];
+void cprt_event(int e);
+void cprt_dump_events();
+
+
+extern char* cprt_optarg;
+extern int cprt_optopt;
+extern int cprt_optind;
+extern int cprt_opterr;
+int cprt_getopt(int argc, char* const argv[], const char* optstring);
 
 #if defined(__cplusplus)
 }
